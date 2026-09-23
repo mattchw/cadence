@@ -22,6 +22,7 @@ import {
   Globe,
   Sun,
   Settings2,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { LEVELS, typeClass } from "@/lib/constants";
@@ -42,6 +43,7 @@ import {
 import { AccountStatus } from "@/components/account-status";
 import type { AccountUser } from "@/lib/auth-policy";
 import { Today } from "@/components/today";
+import { ProgressCalendar } from "@/components/progress-calendar";
 import { Profile } from "@/components/profile";
 import { Practice } from "@/components/practice";
 import { WritingCoach } from "@/components/writing-coach";
@@ -155,7 +157,13 @@ export default function Cadence({
   onSignOut: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<
-    "today" | "practice" | "exercises" | "review" | "bank" | "profile"
+    | "today"
+    | "practice"
+    | "exercises"
+    | "review"
+    | "bank"
+    | "profile"
+    | "calendar"
   >("today");
   const [upgrades, setUpgrades] = useState<BankItem[]>([]);
   const bankRef = useRef<BankItem[]>([]);
@@ -368,6 +376,12 @@ export default function Cadence({
             icon={Layers}
             label="Bank"
           />
+          <Tab
+            active={tab === "calendar"}
+            onClick={() => setTab("calendar")}
+            icon={CalendarDays}
+            label="Calendar"
+          />
         </nav>
         <AccountStatus
           user={user}
@@ -376,6 +390,7 @@ export default function Cadence({
           legacyCloudAvailable={legacyCloudAvailable}
           onSignOut={leave}
           signingOut={signingOut}
+          onRetryLoad={() => setLoadAttempt((attempt) => attempt + 1)}
         />
         {signOutError && (
           <p
@@ -418,6 +433,13 @@ export default function Cadence({
         ) : (
           <main>
             <fieldset disabled={signingOut}>
+              {tab === "calendar" && (
+                <ProgressCalendar
+                  records={learning.records}
+                  weeklyGoal={profile.weeklyGoal}
+                  onPractice={() => setTab("today")}
+                />
+              )}
               {tab === "today" && (
                 <Today
                   profile={profile}
@@ -481,10 +503,12 @@ export default function Cadence({
             </fieldset>
           </main>
         )}
-        <footer className="mt-10 border-t border-slate-200 pt-4 text-center text-xs text-slate-400">
-          Small steps, at your pace. · {stats.sessions} practice days ·{" "}
-          {upgrades.length} expressions saved
-        </footer>
+        {ready && (
+          <footer className="mt-10 border-t border-slate-200 pt-4 text-center text-xs text-slate-400">
+            Small steps, at your pace. · {stats.sessions} practice days ·{" "}
+            {upgrades.length} expressions saved
+          </footer>
+        )}
       </div>
     </div>
   );

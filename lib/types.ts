@@ -46,6 +46,8 @@ export interface UpgradeSuggestion {
 }
 
 export interface Feedback {
+  practiceCorrection?: UpgradeSuggestion | null;
+  expressionChecks?: ExpressionCheck[];
   rewrite?: string;
   naturalness?: number;
   verdict?: string;
@@ -100,6 +102,36 @@ export interface DailyLesson {
   successCriteria: string[];
 }
 
+export interface RecallChallenge {
+  key: string;
+  sourceId: string;
+  sourceDate: string;
+  original: string;
+  suggestion: string;
+  reason: string;
+  context: string;
+  focus: UpgradeType;
+  attempt: string;
+  revealed: boolean;
+  outcome: "remembered" | "again" | "skipped" | null;
+}
+
+export interface ReuseTarget {
+  id: string;
+  phrase: string;
+  meaning: string;
+  savedOn: string;
+}
+
+export interface ExpressionCheck {
+  id: string;
+  phrase: string;
+  status: "used" | "variation" | "retry" | "not-used";
+  source: "draft" | "revision" | null;
+  evidence: string;
+  note: string;
+}
+
 export interface DailySession {
   id: string;
   date: string;
@@ -108,7 +140,10 @@ export interface DailySession {
   topic: string;
   focus: UpgradeType;
   support: Support;
-  stage: "review" | "read" | "write" | "reflect" | "complete";
+  stage: "recall" | "review" | "read" | "write" | "reflect" | "complete";
+  // Optional so sessions saved before the personalised loop still resume.
+  recall?: RecallChallenge | null;
+  reuseTargets?: ReuseTarget[];
   lesson: DailyLesson | null;
   reviewIds: string[];
   reviewedIds: string[];
@@ -120,6 +155,8 @@ export interface DailySession {
 }
 
 export interface LearningRecord {
+  recall?: RecallChallenge | null;
+  reuseTargets?: ReuseTarget[];
   id: string;
   date: string;
   title: string;

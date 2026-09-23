@@ -461,3 +461,282 @@ test("failed saves keep the user signed in until they explicitly leave a device 
     await unmount();
   }
 });
+
+test("personal recall resumes, feeds a fresh challenge, and stores evidenced phrase use with the completed session", async () => {
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = localDate(yesterdayDate);
+  const old = {
+    id: "past-correction",
+    date: yesterday,
+    title: "A choice",
+    prompt: "Explain your decision",
+    original: "I did a decision yesterday.",
+    revision: "",
+    feedback: {
+      upgrades: [
+        {
+          original: "did a decision",
+          native: "made a decision",
+          why: "Use make with decision.",
+          type: "collocation",
+          category: "correction",
+        },
+      ],
+    },
+    minutes: 3,
+    reviewed: 0,
+    focus: "collocation",
+    difficulty: "right",
+    readingLevel: "C1",
+    writingLevel: "C1",
+  };
+  const savedPhrase = {
+    id: "decision-phrase",
+    kind: "vocab",
+    original: "make a decision",
+    native: "choose between options",
+    why: "Useful when planning",
+    type: "collocation",
+    focus: "work",
+    createdAt: yesterday,
+    due: yesterday,
+    reps: 1,
+    interval: 1,
+    ease: 2.5,
+  };
+  const server = mockServer({
+    "cadence:profile": { ...DEFAULT_PROFILE, configured: true, minutes: 3 },
+    "cadence:learning": { session: null, records: [old] },
+    "cadence:upgrades": [savedPhrase],
+  });
+  const baseFetch = globalThis.fetch;
+  let generation;
+  let checking;
+  let invalidEvidence = true;
+  const draft = "I will make a decision tomorrow.";
+  globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/ai") {
+      const request = JSON.parse(options.body);
+      if (request.system.includes("Create one engaging daily")) {
+        generation = JSON.parse(request.messages[0].content);
+        return response({
+          ...lesson,
+          title: "A team decision",
+          passage: "Your team is choosing a venue for Friday’s meeting.",
+          prompt: "Tell your colleague when you will choose the venue.",
+        });
+      }
+      if (request.system.includes("Give short, evidence-based")) {
+        checking = JSON.parse(request.messages[0].content);
+        return response({
+          ...feedback,
+          upgrades: [],
+          expressionChecks: [
+            {
+              id: savedPhrase.id,
+              status: "used",
+              source: "draft",
+              evidence: invalidEvidence ? "You did not write this." : draft,
+              note: "A natural way to describe choosing the venue.",
+            },
+          ],
+        });
+      }
+    }
+    return baseFetch(url, options);
+  };
+  try {
+    await mount(app());
+    await click("Start my session");
+    assert.match(text(), /Can you bring it back/);
+    assert.ok(
+      !document
+        .querySelector("#personal-recall")
+        .closest("section")
+        .textContent.includes("made a decision"),
+    );
+    await fill("#personal-recall", "made a decision");
+    await act(async () => root.unmount());
+    root = null;
+    await mount(app());
+    assert.equal(
+      document.querySelector("#personal-recall").value,
+      "made a decision",
+    );
+    await click("Compare with the earlier feedback");
+    await click("Recalled it");
+    assert.match(text(), /A team decision/);
+    assert.equal(generation.personalFocus.correction, "made a decision");
+    assert.equal(generation.reuseTargets[0].phrase, "make a decision");
+    await click("I’m ready to try");
+    assert.match(text(), /Put your saved expressions to work/);
+    await fill("#writing-draft", draft);
+    await click("Help me improve it");
+    await fill(
+      "#writing-revision",
+      "I will make a decision tomorrow and let you know.",
+    );
+    await click("Review my revision");
+    assert.match(text(), /expression evidence did not match/);
+    assert.ok(!text().includes("Used in your first draft"));
+    invalidEvidence = false;
+    await click("Review my revision");
+    assert.match(text(), /Used in your first draft/);
+    assert.equal(checking.original, draft);
+    assert.equal(checking.reuseTargets[0].id, savedPhrase.id);
+    await click("Wrap up my session");
+    await click("About right");
+    await click("Finish for today");
+    assert.match(text(), /A small step you can see/);
+    assert.match(text(), /Weak-spot recalls after a break/);
+    const saved = server.remote.get("cadence:learning");
+    assert.equal(saved.records.length, 2);
+    assert.equal(saved.records[1].recall.outcome, "remembered");
+    assert.equal(saved.records[1].feedback.expressionChecks[0].evidence, draft);
+    assert.equal(saved.records[1].reuseTargets[0].phrase, "make a decision");
+    // A second browser starts without the first browser's recovery copy.
+    await unmount();
+    clearStorageSession();
+    localStorage.clear();
+    await mount(app());
+    assert.match(text(), /A small step you can see/);
+    assert.match(text(), /Used in your first draft/);
+    assert.match(text(), /2 sessions completed/);
+  } finally {
+    await unmount();
+  }
+});
+
+test("Calendar shows saved practice days, opens session details, and navigates months", async () => {
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  const now = new Date();
+  const today = localDate(now);
+  const previous = localDate(
+    new Date(now.getFullYear(), now.getMonth() - 1, 15, 12),
+  );
+  const record = (id, date, title) => ({
+    id,
+    date,
+    title,
+    prompt: "Explain your idea",
+    original: "My first idea.",
+    revision: "A clearer idea.",
+    feedback: {
+      improvement: "You made your meaning clearer.",
+      next_step: "Keep the audience in mind.",
+    },
+    minutes: 10,
+    reviewed: 2,
+    focus: "register",
+    difficulty: "right",
+    readingLevel: "C1",
+    writingLevel: "C1",
+  });
+  mockServer({
+    "cadence:learning": {
+      session: null,
+      records: [
+        record("a", today, "A thoughtful reply"),
+        record("b", today, "Another perspective"),
+        record("c", previous, "Last month’s challenge"),
+      ],
+    },
+  });
+  try {
+    await mount(app());
+    await click("Calendar");
+    const panel = () =>
+      document.querySelector('[aria-label="Selected day’s progress"]');
+    assert.match(panel().textContent, /A thoughtful reply/);
+    assert.match(panel().textContent, /Another perspective/);
+    const selectedDay = document.querySelector('button[aria-pressed="true"]');
+    assert.match(
+      selectedDay.getAttribute("aria-label"),
+      /today, 2 completed sessions/,
+    );
+    assert.equal(button("Next month").disabled, true);
+    const details = panel().querySelector("details");
+    await act(async () => details.querySelector("summary").click());
+    assert.equal(details.open, true);
+    assert.match(details.textContent, /A clearer idea/);
+    await click("Previous month");
+    assert.match(panel().textContent, /Last month’s challenge/);
+    assert.equal(button("Next month").disabled, false);
+    const blank = [...document.querySelectorAll("button[aria-label]")].find(
+      (el) => el.getAttribute("aria-label").includes("no completed sessions"),
+    );
+    await act(async () => blank.click());
+    assert.match(panel().textContent, /No completed daily sessions/);
+    await click("This month");
+    assert.match(panel().textContent, /A thoughtful reply/);
+    assert.equal(button("Next month").disabled, true);
+  } finally {
+    await unmount();
+  }
+});
+
+test("an unfinished session does not mark the calendar as completed", async () => {
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  mockServer({
+    "cadence:learning": {
+      session: {
+        ...(await import("../lib/learning.ts")).createSession(
+          DEFAULT_PROFILE,
+          3,
+          [],
+          [],
+          "balanced",
+        ),
+        stage: "write",
+        lesson,
+      },
+      records: [],
+    },
+  });
+  try {
+    await mount(app());
+    await click("Calendar");
+    assert.match(
+      document
+        .querySelector('button[aria-pressed="true"]')
+        .getAttribute("aria-label"),
+      /no completed sessions/,
+    );
+    assert.match(text(), /0 \/ 4 days this week/);
+    await click("Practise today");
+    assert.ok(document.querySelector("#writing-draft"));
+  } finally {
+    await unmount();
+  }
+});
+
+test("initial setup failures explain the missing database and the account retry button reloads progress", async () => {
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  globalThis.fetch = async () =>
+    Response.json({ error: "database_not_configured" }, { status: 503 });
+  try {
+    await mount(app());
+    assert.match(text(), /KV_REST_API_URL/);
+    assert.match(text(), /redeploy/);
+    assert.ok(!text().includes("0 practice days"));
+    assert.ok(!text().includes("Retry saving"));
+    mockServer({ "cadence:profile": { ...DEFAULT_PROFILE, configured: true } });
+    await click("Retry loading");
+    assert.match(text(), /Start my session/);
+    assert.match(text(), /Saved to your account/);
+    await click("Learner profile");
+    assert.ok(document.querySelector("select"));
+  } finally {
+    await unmount();
+  }
+});

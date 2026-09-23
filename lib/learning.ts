@@ -9,6 +9,7 @@ import type {
   UpgradeType,
   WritingState,
 } from "./types";
+import { selectRecall, selectReuseTargets } from "./daily-loop";
 
 export const DEFAULT_PROFILE: LearnerProfile = {
   levels: { reading: "C1", writing: "C1", listening: "C1", speaking: "C1" },
@@ -142,7 +143,10 @@ export function createSession(
   support: Support,
   date = localDate(),
 ): DailySession {
-  const reviewLimit = minutes === 3 ? 1 : minutes === 10 ? 3 : 5;
+  const recall = selectRecall(records, date);
+  const focus = recall?.focus ?? chooseFocus(records, date);
+  const reviewLimit =
+    (minutes === 3 ? 1 : minutes === 10 ? 3 : 5) - (recall ? 1 : 0);
   const reviewIds = upgrades
     .filter((item) => item.due <= date)
     .sort((a, b) => a.due.localeCompare(b.due))
@@ -155,9 +159,17 @@ export function createSession(
     profile: structuredClone(profile),
     minutes,
     topic: profile.interests[daySeed % profile.interests.length],
-    focus: chooseFocus(records, date),
+    focus,
     support,
-    stage: reviewIds.length ? "review" : "read",
+    stage: recall ? "recall" : reviewIds.length ? "review" : "read",
+    recall,
+    reuseTargets: selectReuseTargets(
+      upgrades,
+      records,
+      date,
+      minutes === 3 || ["A1", "A2"].includes(profile.levels.writing) ? 1 : 2,
+      focus,
+    ),
     lesson: null,
     reviewIds,
     reviewedIds: [],
@@ -186,6 +198,8 @@ export function toRecord(session: DailySession): LearningRecord | null {
     difficulty: session.difficulty,
     writingLevel: session.profile.levels.writing,
     readingLevel: session.profile.levels.reading,
+    recall: session.recall ? structuredClone(session.recall) : null,
+    reuseTargets: structuredClone(session.reuseTargets ?? []),
   };
 }
 

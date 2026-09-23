@@ -11,12 +11,14 @@ import {
 import { getCoachingHint, getFeedback } from "@/lib/ai";
 import { upgradeKey } from "@/lib/learning";
 import { typeClass } from "@/lib/constants";
+import { ExpressionResults } from "@/components/daily-loop";
 import type {
   BankItem,
   Feedback,
   LearnerProfile,
   UpgradeSuggestion,
   WritingState,
+  ReuseTarget,
 } from "@/lib/types";
 
 export function FeedbackView({
@@ -142,6 +144,7 @@ export function FeedbackView({
           </p>
         </div>
       )}
+      <ExpressionResults checks={feedback.expressionChecks} />
     </div>
   );
 }
@@ -157,6 +160,7 @@ interface Props {
   onSave: (items: UpgradeSuggestion[]) => void;
   onFeedback?: () => void;
   locked?: boolean;
+  reuseTargets?: ReuseTarget[];
 }
 export function WritingCoach({
   task,
@@ -169,6 +173,7 @@ export function WritingCoach({
   onSave,
   onFeedback,
   locked = false,
+  reuseTargets = [],
 }: Props) {
   const [busy, setBusy] = useState<"hint" | "feedback" | null>(null);
   const [error, setError] = useState("");
@@ -219,6 +224,7 @@ export function WritingCoach({
         focus === "listening",
         profile,
         value.hint ? value.draft : undefined,
+        reuseTargets,
       );
       if (mounted.current) {
         onChange({ ...value, feedback: result });

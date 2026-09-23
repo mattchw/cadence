@@ -18,6 +18,14 @@ import {
   weeklyDays,
 } from "@/lib/learning";
 import { FeedbackView, WritingCoach } from "@/components/writing-coach";
+import { selectRecall } from "@/lib/daily-loop";
+import {
+  RecallPanel,
+  ReusePrompt,
+  LearningWin,
+  ProgressPulse,
+  RecallResult,
+} from "@/components/daily-loop";
 import type {
   BankItem,
   DailySession,
@@ -76,6 +84,7 @@ export function Today({
       ? session
       : null;
   const days = weeklyDays(records);
+  const nextRecall = !active ? selectRecall(records, today) : null;
   const generate = async (current: DailySession) => {
     setBusy(true);
     setError("");
@@ -121,7 +130,9 @@ export function Today({
   };
   const stages = ["Recall", "Explore", "Try & revise", "Finish"];
   const stageIndex = active
-    ? { review: 0, read: 1, write: 2, reflect: 3, complete: 4 }[active.stage]
+    ? { recall: 0, review: 0, read: 1, write: 2, reflect: 3, complete: 4 }[
+        active.stage
+      ]
     : 0;
 
   return (
@@ -164,6 +175,8 @@ export function Today({
           </button>
         </div>
       </section>
+
+      <ProgressPulse records={records} />
 
       {!profile.configured && !active && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-4">
@@ -238,13 +251,21 @@ export function Today({
           </p>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
-              A few reviews → one challenge → a fresh attempt
+              Recall → a new challenge → reuse → notice a change
             </p>
             <button className="primary-button" onClick={start} disabled={busy}>
               Start my session <ArrowRight size={16} />
             </button>
           </div>
         </section>
+      )}
+
+      {!active && nextRecall && (
+        <p className="rounded-xl bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
+          Today starts with {FOCUS_LABELS[nextRecall.focus].toLowerCase()} from
+          your practice on {nextRecall.sourceDate}. Then you’ll try the same
+          skill in a fresh situation.
+        </p>
       )}
 
       {active && active.stage !== "complete" && (
@@ -277,6 +298,18 @@ export function Today({
               </li>
             ))}
           </ol>
+          {active.stage === "recall" && active.recall && (
+            <RecallPanel
+              challenge={active.recall}
+              onChange={(recall) => patch({ recall })}
+              onContinue={(outcome) =>
+                patch({
+                  recall: { ...active.recall!, outcome },
+                  stage: active.reviewIds.length ? "review" : "read",
+                })
+              }
+            />
+          )}
           {active.stage === "review" && (
             <section className="panel space-y-4">
               <div>
@@ -479,6 +512,7 @@ export function Today({
                 </summary>
                 <p className="mt-2 leading-relaxed">{active.lesson.support}</p>
               </details>
+              <ReusePrompt targets={active.reuseTargets ?? []} />
               <WritingCoach
                 key={active.id}
                 task={active.lesson.prompt}
@@ -489,6 +523,7 @@ export function Today({
                 onChange={(writing) => patch({ writing })}
                 bank={bank}
                 onSave={(items) => onSave(items, active.focus)}
+                reuseTargets={active.reuseTargets}
               />
               {active.writing.feedback && (
                 <div className="border-t border-slate-100 pt-5">
@@ -577,6 +612,8 @@ export function Today({
         </section>
       )}
 
+      {active?.stage === "complete" && <LearningWin session={active} />}
+
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-serif text-xl">Your progress, in your words</h3>
@@ -607,6 +644,7 @@ export function Today({
                 </summary>
                 <div className="mt-5 space-y-5">
                   <p className="text-sm text-slate-600">{record.prompt}</p>
+                  <RecallResult recall={record.recall} />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-xl bg-slate-50 p-4">
                       <p className="text-xs font-semibold text-slate-500">

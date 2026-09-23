@@ -266,3 +266,45 @@ test("old shared progress is claimable only by the explicitly configured verifie
     false,
   );
 });
+
+test("missing or invalid database configuration gets a specific error without exposing credentials", async () => {
+  const { databaseSettings, DatabaseConfigurationError } =
+    await import("../lib/database-config.ts");
+  assert.throws(
+    () => databaseSettings({}),
+    (error) => error.code === "database_not_configured",
+  );
+  assert.throws(
+    () =>
+      databaseSettings({
+        KV_REST_API_URL: "redis://example.test",
+        KV_REST_API_TOKEN: "private-token",
+      }),
+    (error) => error.code === "database_configuration_invalid",
+  );
+  assert.deepEqual(
+    databaseSettings({
+      KV_REST_API_URL: " https://example.upstash.io \n",
+      KV_REST_API_TOKEN: " token \n",
+    }),
+    { url: "https://example.upstash.io", token: "token" },
+  );
+  const handlers = createStoreHandlers({
+    user: async () => alice,
+    repository: () => {
+      throw new DatabaseConfigurationError("database_not_configured");
+    },
+  });
+  const result = await handlers.GET(request("GET"));
+  assert.equal(result.status, 503);
+  assert.deepEqual(await result.json(), { error: "database_not_configured" });
+  const unavailable = createStoreHandlers({
+    user: async () => alice,
+    repository: () => {
+      throw new Error("token=private-token");
+    },
+  });
+  assert.deepEqual(await (await unavailable.GET(request("GET"))).json(), {
+    error: "database_unavailable",
+  });
+});

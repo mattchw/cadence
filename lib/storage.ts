@@ -157,6 +157,16 @@ class SyncError extends Error {
 }
 async function failure(response: Response, ctx: Context): Promise<never> {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
+  if (body.error === "database_not_configured")
+    throw new SyncError(
+      body.error,
+      "Account storage is not configured on this deployment. Add KV_REST_API_URL and KV_REST_API_TOKEN to its Vercel environment variables, then redeploy.",
+    );
+  if (body.error === "database_configuration_invalid")
+    throw new SyncError(
+      body.error,
+      "The database settings are invalid. Use the Upstash HTTPS REST URL and its REST token, without quotes, in Vercel, then redeploy.",
+    );
   if (response.status === 401 || body.error === "account_changed") {
     ctx.blocked = true;
     notify(ctx);

@@ -30,6 +30,7 @@ export function AccountStatus({
   legacyCloudAvailable,
   onSignOut,
   signingOut,
+  onRetryLoad,
 }: {
   user: AccountUser;
   state: ReturnType<typeof syncState>;
@@ -37,6 +38,7 @@ export function AccountStatus({
   legacyCloudAvailable: boolean;
   onSignOut: (leaveUnsynced?: boolean) => Promise<void>;
   signingOut: boolean;
+  onRetryLoad: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -83,7 +85,9 @@ export function AccountStatus({
             ) : (
               <CloudOff size={13} />
             )}
-            {state.message}
+            {!ready && state.status === "error"
+              ? "Your account progress hasn’t loaded yet."
+              : state.message}
           </p>
         </div>
         <button
@@ -104,6 +108,10 @@ export function AccountStatus({
             disabled={busy}
             onClick={() =>
               void act(async () => {
+                if (!ready) {
+                  onRetryLoad();
+                  return;
+                }
                 if (!(await retrySync()))
                   throw new Error(
                     "Still unable to save. Check your connection and retry before changing browsers.",
@@ -112,7 +120,7 @@ export function AccountStatus({
             }
           >
             <span className="flex items-center gap-1">
-              <RefreshCw size={13} /> Retry saving
+              <RefreshCw size={13} /> {ready ? "Retry saving" : "Retry loading"}
             </span>
           </button>
           <button

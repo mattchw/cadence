@@ -8,8 +8,10 @@ import type {
   DailyLesson,
   DailySession,
   UpgradeType,
+  ReuseTarget,
 } from "@/lib/types";
 import { DEFAULT_PROFILE, FOCUS_LABELS, GOALS } from "@/lib/learning";
+import { containsPhrase, validateExpressionChecks } from "@/lib/daily-loop";
 
 const MODEL = "claude-sonnet-4-6";
 const TYPES: UpgradeType[] = [
@@ -141,18 +143,22 @@ export async function getFeedback(
   isDecode: boolean,
   profile = DEFAULT_PROFILE,
   original?: string,
+  reuseTargets: ReuseTarget[] = [],
 ): Promise<Feedback> {
   const result = await ask(
     `${COACH_RULES}
 Give short, evidence-based feedback on the submitted response using the learner's writing level and goal. ${isDecode ? "This is a comprehension task: check the interpretation against the original text." : ""}
 Schema: {"rewrite":"one possible version preserving meaning and voice", "verdict":"one clear, supportive sentence", "qualities":{"clarity":"brief specific observation","accuracy":"brief specific observation","precision":"brief specific observation","appropriateness":"brief observation about audience and task"}, "upgrades":[{"original":"exact phrase from submitted response","native":"suggested phrasing","why":"reason","type":"collocation|register|idiom|word-choice|grammar|rhythm|vocab","category":"correction|alternative"}], "next_step":"one habit to practise", "improvement":"if an original was provided, explain what changed in the revision; otherwise empty string"}
-Give 0–3 useful suggestions. Do not invent errors to fill a quota. Make no numerical proficiency claims. If an original is supplied, assess the revision and compare it fairly to the original; unchanged text is not an improvement.`,
+Give 0–3 useful suggestions. Do not invent errors to fill a quota. Make no numerical proficiency claims. If an original is supplied, assess the revision and compare it fairly to the original; unchanged text is not an improvement.
+Also return "practiceCorrection": null, or ONE correction that the learner fixed between original and response: {"original":"exact short quote from original", "native":"exact corrected quote from response", "why":"explain the correction", "type":"collocation|register|idiom|word-choice|grammar|rhythm|vocab", "category":"correction"}. Use null if there was no original, no genuine error fixed, or only a stylistic alternative. This will become a future recall exercise; do not invent a mistake or quote your own rewrite.
+When reuseTargets are supplied, also return "expressionChecks": [{"id":"exact target id", "status":"used|retry|not-used", "source":"draft|revision|null", "evidence":"exact learner quote containing the target phrase", "note":"brief explanation of meaning and fit"}], exactly one per target. 'used' means appropriate use in context, not merely inclusion; 'retry' means present but awkward or incorrect; 'not-used' means absent (source null, evidence empty). Assess both attempts: prefer an appropriate use in the first draft, otherwise assess the revision. Source 'draft' refers to original when supplied, otherwise response. Source 'revision' refers to response ONLY when original was supplied. Quote ONLY learner text, never the task, reading, or your rewrite. Do not call prompted phrase use mastery or independent recall. If the task does not suit a phrase, say so without penalising the learner.`,
     JSON.stringify({
       learner: learnerContext(profile),
       focus: focusLabel,
       task,
       response: draft,
       original,
+      reuseTargets,
     }),
   );
   if (
@@ -167,6 +173,33 @@ Give 0–3 useful suggestions. Do not invent errors to fill a quota. Make no num
     throw new Error("The feedback was incomplete. Please try again.");
   }
   return {
+    practiceCorrection:
+      original !== undefined &&
+      original.trim() !== draft.trim() &&
+      object(result.practiceCorrection) &&
+      result.practiceCorrection.category === "correction" &&
+      string(result.practiceCorrection.original) &&
+      string(result.practiceCorrection.native) &&
+      string(result.practiceCorrection.why) &&
+      TYPES.includes(result.practiceCorrection.type as UpgradeType) &&
+      containsPhrase(original, result.practiceCorrection.original) &&
+      containsPhrase(draft, result.practiceCorrection.native) &&
+      result.practiceCorrection.original.trim().toLowerCase() !==
+        result.practiceCorrection.native.trim().toLowerCase()
+        ? {
+            original: result.practiceCorrection.original,
+            native: result.practiceCorrection.native,
+            why: result.practiceCorrection.why,
+            type: result.practiceCorrection.type as UpgradeType,
+            category: "correction",
+          }
+        : null,
+    expressionChecks: validateExpressionChecks(
+      result.expressionChecks,
+      reuseTargets,
+      original ?? draft,
+      original === undefined ? undefined : draft,
+    ),
     verdict: result.verdict,
     rewrite: result.rewrite,
     qualities: {
@@ -208,6 +241,7 @@ export async function generateDailyLesson(
     `${COACH_RULES}
 Create one engaging daily READING AND WRITING challenge, with a clear finish. Use an original fictional situation about the learner's interest, not purported news or facts needing verification. At A1/A2 use familiar concrete language, short sentences and a sentence starter. At B1/B2 ask for explanation, comparison or a practical response. At C1/C2 use subtext, a tone switch, nuanced word choice or synthesis of two short viewpoints, suited to the focus. Use the READING level for input and WRITING level for output. The target is a direction, not permission to skip several levels. Fit the time budget, reducing length further for beginners. Use variety across dates.
 Support setting: supported = more explanation and a starter; balanced = a small stretch; stretch = less scaffolding and more subtle distinctions within their level. Never use difficulty as an excuse for verbose prose. The support field is an optional hint, not an answer.
+If personalFocus is supplied, give an opportunity to practise that specific correction in a DIFFERENT situation. Do not repeat the old sentence or expose the answer. If reuseTargets are supplied, design a context where those expressions fit naturally; leave their use to the learner, not a model answer in the passage. They are optional tools, never force awkward phrasing. At C1/C2 rotate between diplomatic disagreement, concise rewriting that preserves nuance, audience switches, and fair summary followed by a measured challenge.
 Schema: {"title":"short evocative title", "passage":"original input/dialogue/viewpoints", "prompt":"one clear task with audience, purpose and response length", "support":"one helpful starter or strategy", "successCriteria":["concrete success criterion", "concrete success criterion"]}`,
     JSON.stringify({
       learner: learnerContext(session.profile),
@@ -216,6 +250,15 @@ Schema: {"title":"short evocative title", "passage":"original input/dialogue/vie
       focus: FOCUS_LABELS[session.focus],
       support: session.support,
       budget: size,
+      personalFocus: session.recall
+        ? {
+            original: session.recall.original,
+            correction: session.recall.suggestion,
+            reason: session.recall.reason,
+            previousTask: session.recall.context,
+          }
+        : undefined,
+      reuseTargets: session.reuseTargets ?? [],
     }),
   );
   if (

@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { databaseSettings } from "./database-config";
 import { databaseKey, type AccountRepository } from "./server-store";
 import { STORE_KEYS, type StoreEntry, type StoreKey } from "./store-schema";
 
@@ -33,12 +34,11 @@ return 1
 
 let client: Redis | null = null;
 export function redisClient(): Redis {
-  if (
-    !process.env.UPSTASH_REDIS_REST_URL ||
-    !process.env.UPSTASH_REDIS_REST_TOKEN
-  )
-    throw new Error("Database is not configured");
-  client ??= Redis.fromEnv();
+  const settings = databaseSettings({
+    KV_REST_API_URL: process.env.KV_REST_API_URL,
+    KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+  });
+  client ??= new Redis(settings);
   return client;
 }
 export function accountRepository(): AccountRepository {

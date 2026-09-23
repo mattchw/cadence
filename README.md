@@ -7,9 +7,21 @@ Daily English practice that fits your level and your life. Built with Next.js 15
 - **Today:** choose a flexible 3-, 10-, or 20-minute session. Recall up to 1, 3, or 5 due expressions, read an original scenario, write a response, try a revision, and finish with a difficulty check-in.
 - **My profile:** separate A1–C2 self-estimates for reading, writing, listening, and speaking; a target level; everyday/work/study goals; up to six interests; preferred session time; and a weekly goal.
 - **Guided feedback:** receive one specific strength and a hint before a suggested rewrite. Try again, compare your attempts, and save useful expressions. Direct feedback is also available.
+- **Calendar:** browse months, see completed Today practice days, check weekly and monthly totals, and select a date to revisit saved attempts and feedback. Existing history appears automatically. Drafts and standalone practice activities are not counted.
 - **Progress:** daily-session history keeps the prompt, original response, revision, and feedback. The weekly goal counts unique completed days, starting on Monday. A missed day does not erase that progress.
 - **Adaptation:** three consecutive easy or hard reflections at the same reading and writing levels adjust the suggested support. Repeated corrections across recent sessions influence the next focus. Learners can override the support setting; the app never automatically awards a CEFR level.
 - **Resume:** the active daily session, review position, draft, hint, revision, and feedback are saved. An unfinished session can be completed on a later day and counts towards that day's weekly goal.
+
+## A daily loop built from your own English
+
+New Today sessions connect earlier practice to a fresh task:
+
+1. **Recall a past correction.** If one is due, rewrite your earlier wording before revealing the feedback. Only actual corrections quoted from your writing are eligible; optional alternatives are not treated as mistakes. Mark recall yourself or skip it. Successful recalls become eligible after three, then seven days; a missed or skipped recall is eligible the next day. One correction replaces a bank review so short sessions stay short.
+2. **Practise it in a different situation.** The scenario receives the specific correction and your level, interests, and time budget. At C1/C2, tasks can involve diplomatic disagreement, audience changes, concise rewriting, or balanced arguments.
+3. **Put saved expressions to work.** Use one older expression in a short/beginner session, or up to two in a longer session. The coach checks fit and meaning. Credit requires an exact quote from your writing containing the expression; words appearing only in the model’s rewrite cannot earn credit. Natural variants receive feedback as related phrasing without earning the exact-expression count. Leaving out an unsuitable expression is allowed.
+4. **Notice a concrete change.** Completion shows your own first attempt and revision, the coach’s observation, and phrase-use evidence. Progress separates self-assessed delayed recall from prompted phrase use in a first draft; neither is a proficiency or mastery score.
+
+Recall drafts, choices, target expressions, and results use the existing account database and resume across browsers after syncing. History retains the evidence. Existing saved sessions still finish normally; the new loop starts with the next session. New accounts build a personal recall pool as they complete practice and save expressions. No new environment variables are required.
 
 ## Explore at your own pace
 
@@ -54,20 +66,28 @@ Tests use mocked identity, AI, and database services. They cover user isolation,
 3. In Vercel's project environment variables, configure the values below for Production (and separately for Preview if used). Set `NEXTAUTH_URL` to that environment's public origin, without a trailing path.
 4. Deploy the updated code. Remove the old `APP_PASSPHRASE` and `AUTH_TOKEN` variables: this version no longer uses them.
 
-| Variable                   | Purpose                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `GOOGLE_CLIENT_ID`         | Google OAuth Web application client ID.                                                                 |
-| `GOOGLE_CLIENT_SECRET`     | Its client secret.                                                                                      |
-| `NEXTAUTH_URL`             | Public origin, e.g. `https://your-app.vercel.app`. Locally use `http://localhost:3000`.                 |
-| `NEXTAUTH_SECRET`          | A long random authentication secret. Generate with `openssl rand -hex 32`.                              |
-| `UPSTASH_REDIS_REST_URL`   | **Required:** the Upstash Redis REST endpoint.                                                          |
-| `UPSTASH_REDIS_REST_TOKEN` | **Required:** its read/write REST token.                                                                |
-| `ANTHROPIC_API_KEY`        | Powers lessons, hints, and feedback.                                                                    |
-| `LEGACY_OWNER_EMAIL`       | Optional, temporary: permits only this verified Google email to import the old shared database records. |
+| Variable               | Purpose                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`     | Google OAuth Web application client ID.                                                                 |
+| `GOOGLE_CLIENT_SECRET` | Its client secret.                                                                                      |
+| `NEXTAUTH_URL`         | Public origin, e.g. `https://your-app.vercel.app`. Locally use `http://localhost:3000`.                 |
+| `NEXTAUTH_SECRET`      | A long random authentication secret. Generate with `openssl rand -hex 32`.                              |
+| `KV_REST_API_URL`      | **Required:** the Upstash Redis REST endpoint.                                                          |
+| `KV_REST_API_TOKEN`    | **Required:** its read/write REST token.                                                                |
+| `ANTHROPIC_API_KEY`    | Powers lessons, hints, and feedback.                                                                    |
+| `LEGACY_OWNER_EMAIL`   | Optional, temporary: permits only this verified Google email to import the old shared database records. |
 
 Use these names exactly, without `NEXT_PUBLIC_`. Keep secrets in `.env.local` or Vercel's environment settings.
 
 Authentication uses NextAuth's Google OAuth provider and encrypted session cookies. Only verified Google identities are accepted. Database ownership derives from Google's stable account ID in the verified session, never from a user ID supplied in a request. The learning data is persisted in Redis; the browser's authentication cookie is not the progress database. The app requests only Google's basic identity scopes (`openid email profile`).
+
+## If progress will not load after signing in
+
+Google sign-in and database access are separate. A successful login followed by “Let’s reconnect to your progress” means the account records could not be loaded; it does not mean your saved progress is empty.
+
+The app reads `KV_REST_API_URL` and `KV_REST_API_TOKEN` directly from the Vercel database integration. Ensure both are enabled for the deployment environment. The old `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` variables are no longer used and can be removed. Use the HTTPS REST URL, not `KV_URL` or `REDIS_URL`, and the read/write token, not `KV_REST_API_READ_ONLY_TOKEN`. Redeploy after environment changes, then retry loading progress.
+
+Missing and malformed settings now have specific messages. Other database failures remain a general connection error; check the database status and credentials. Initial-load retries fetch the records again; they do not create empty replacement records.
 
 ## How account saving works
 
@@ -96,10 +116,12 @@ components/cadence.tsx       App navigation, learning state, exercises, review, 
 components/account-shell.tsx Google sign-out integration
 components/account-status.tsx Account identity, sync status, recovery/import actions
 components/today.tsx         Daily session and progress history
+components/daily-loop.tsx    Personal recall, phrase reuse, evidence, progress
 components/profile.tsx       Learner preferences
 components/practice.tsx      Level-aware practice prompts and timed writing
 components/writing-coach.tsx Shared hint, revision, and feedback flow
 lib/learning.ts              Session planning, adaptation, progress, batch saves
+lib/daily-loop.ts            Recall scheduling, target selection, evidence checks
 lib/ai.ts                    AI prompts, response validation, API client
 lib/storage.ts               Account-scoped recovery, versioned database sync
 lib/auth.ts                  Google provider and verified server session

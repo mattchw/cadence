@@ -1,5 +1,6 @@
 import type { AccountUser } from "./auth-policy";
 import { validAccountId } from "./auth-policy";
+import { DatabaseConfigurationError } from "./database-config";
 import {
   isStoreKey,
   validStoredValue,
@@ -25,6 +26,17 @@ export interface StoreDependencies {
   repository: () => AccountRepository;
 }
 const MAX_BYTES = 3 * 1024 * 1024;
+export function databaseProblem(error: unknown): Response {
+  return privateJSON(
+    {
+      error:
+        error instanceof DatabaseConfigurationError
+          ? error.code
+          : "database_unavailable",
+    },
+    503,
+  );
+}
 export function privateJSON(data: unknown, status = 200): Response {
   return Response.json(data, {
     status,
@@ -77,8 +89,8 @@ export function createStoreHandlers(deps: StoreDependencies) {
         return entry
           ? privateJSON({ key, ...entry })
           : privateJSON({ error: "not_found" }, 404);
-      } catch {
-        return privateJSON({ error: "database_unavailable" }, 503);
+      } catch (error) {
+        return databaseProblem(error);
       }
     },
     async POST(req: Request): Promise<Response> {
@@ -106,8 +118,8 @@ export function createStoreHandlers(deps: StoreDependencies) {
         return result.ok
           ? privateJSON({ version: result.version })
           : privateJSON({ error: "conflict" }, 409);
-      } catch {
-        return privateJSON({ error: "database_unavailable" }, 503);
+      } catch (error) {
+        return databaseProblem(error);
       }
     },
   };
@@ -142,8 +154,8 @@ export function createImportHandler(deps: StoreDependencies) {
       return imported
         ? privateJSON({ ok: true })
         : privateJSON({ error: "account_has_progress" }, 409);
-    } catch {
-      return privateJSON({ error: "database_unavailable" }, 503);
+    } catch (error) {
+      return databaseProblem(error);
     }
   };
 }
