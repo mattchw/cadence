@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { calendarRecords } from "@/lib/calendar";
 import { FOCUS_LABELS, localDate, weeklyDays } from "@/lib/learning";
+import { selectRecall } from "@/lib/daily-loop";
 import { isDue } from "@/lib/sr";
 import type {
   BankItem,
@@ -18,7 +19,13 @@ import type {
   LearningRecord,
 } from "@/lib/types";
 
-type Destination = "today" | "calendar" | "review" | "bank" | "profile";
+type Destination =
+  | "today"
+  | "calendar"
+  | "review"
+  | "bank"
+  | "profile"
+  | "notebook";
 const labelDate = (date: string) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -61,6 +68,7 @@ export function Dashboard({
     }))
     .sort((a, b) => b.count - a.count);
   const latest = all[0];
+  const recall = selectRecall(all, today);
   const action = !profile.configured
     ? "Set up my learning"
     : unfinished
@@ -139,6 +147,90 @@ export function Dashboard({
               Adjust my goal
             </button>
           </div>
+        </div>
+      </section>
+      <section aria-label="Recommended next steps" className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="eyebrow">A little direction</p>
+            <h3 className="mt-2 font-serif text-2xl">Your next steps</h3>
+          </div>
+          <span className="text-xs text-slate-500">
+            Choose one. There’s no need to do everything.
+          </span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <button
+            onClick={() => onNavigate(profile.configured ? "today" : "profile")}
+            className="group rounded-2xl border border-teal-200 bg-teal-50 p-5 text-left transition hover:border-teal-500"
+          >
+            <span className="text-xs font-semibold uppercase tracking-wider text-teal-700">
+              01 · Practise
+            </span>
+            <h4 className="mt-3 font-semibold text-teal-950">
+              {unfinished
+                ? "Pick up where you left off"
+                : doneToday
+                  ? "Today’s practice is complete"
+                  : recall
+                    ? `Revisit ${FOCUS_LABELS[recall.focus].toLowerCase()}`
+                    : "Build your daily rhythm"}
+            </h4>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {unfinished
+                ? "Your saved draft and lesson are ready to continue."
+                : doneToday
+                  ? "Reopen your completed session to reflect on your work."
+                  : recall
+                    ? "An earlier correction is ready for recall in your next guided session."
+                    : "One short reading and writing challenge, adapted to your profile."}
+            </p>
+            <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-teal-800">
+              {profile.configured ? "Open Today" : "Personalise my plan"}
+              <ArrowRight size={15} />
+            </span>
+          </button>
+          <button
+            onClick={() => onNavigate(due ? "review" : "bank")}
+            className="rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-teal-400"
+          >
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              02 · Remember
+            </span>
+            <h4 className="mt-3 font-semibold">
+              {due
+                ? `${due} expressions ready to revisit`
+                : "Make useful language yours"}
+            </h4>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              {due
+                ? "Recall first, then compare. Reviews come back on your spaced schedule."
+                : "Collect expressions from feedback so they can return in future reviews."}
+            </p>
+            <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-teal-800">
+              {due ? "Open Review" : "Open Bank"}
+              <ArrowRight size={15} />
+            </span>
+          </button>
+          <button
+            onClick={() => onNavigate("notebook")}
+            className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-left transition hover:border-indigo-400"
+          >
+            <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700">
+              03 · Reflect
+            </span>
+            <h4 className="mt-3 font-semibold text-indigo-950">
+              Learn from your own words
+            </h4>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Search past feedback, compare your attempts, and save language
+              worth keeping.
+            </p>
+            <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-indigo-800">
+              Open Notebook
+              <ArrowRight size={15} />
+            </span>
+          </button>
         </div>
       </section>
       <div className="flex flex-wrap items-center justify-between gap-3">

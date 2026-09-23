@@ -947,3 +947,64 @@ test("Dashboard counts unique completed records, filters dates, and shows saved 
     await unmount();
   }
 });
+
+test("Notebook searches saved feedback, filters attempts, and saves expressions without duplication", async () => {
+  const { LearningNotebook } =
+    await import("../components/learning-notebook.tsx");
+  const { addUpgrades } = await import("../lib/learning.ts");
+  const records = [
+    {
+      id: "guided",
+      date: "2026-09-23",
+      title: "A warm invitation",
+      prompt: "Reply to your friend",
+      original: "No thanks",
+      revision: "Thanks for thinking of me",
+      focus: "register",
+      feedback,
+    },
+    {
+      id: "independent",
+      date: "2026-09-22",
+      title: "A new proposal",
+      prompt: "Make a proposal",
+      original: "Here is my proposal",
+      revision: "",
+      focus: "word-choice",
+      feedback: { next_step: "Support your argument" },
+      mission: { mode: "independent" },
+    },
+  ];
+  function Harness() {
+    const [bank, setBank] = React.useState([]);
+    return React.createElement(LearningNotebook, {
+      records,
+      bank,
+      onSave: (items, focus) =>
+        setBank((previous) => addUpgrades(previous, items, focus)),
+      onPractice: () => {},
+    });
+  }
+  try {
+    await mount(React.createElement(Harness));
+    assert.match(text(), /2 sessions found/);
+    await fill("#notebook-search", "thinking of me");
+    assert.match(text(), /1 session found/);
+    assert.doesNotMatch(text(), /A new proposal/);
+    await click("Save expression");
+    assert.equal(button("Saved to bank").disabled, true);
+    await fill("#notebook-search", "");
+    await click("No-hints attempts");
+    assert.match(text(), /A new proposal/);
+    assert.doesNotMatch(text(), /A warm invitation/);
+    await click("With revisions");
+    assert.match(text(), /A warm invitation/);
+    assert.doesNotMatch(text(), /A new proposal/);
+    await fill("#notebook-search", "no match exists");
+    assert.match(text(), /No matching sessions/);
+    await click("Clear filters");
+    assert.match(text(), /2 sessions found/);
+  } finally {
+    await unmount();
+  }
+});

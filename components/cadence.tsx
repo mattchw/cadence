@@ -24,6 +24,7 @@ import {
   Settings2,
   CalendarDays,
   LayoutDashboard,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 import { LEVELS, typeClass } from "@/lib/constants";
@@ -43,6 +44,7 @@ import {
 } from "@/lib/storage";
 import { AccountStatus } from "@/components/account-status";
 import type { AccountUser } from "@/lib/auth-policy";
+import { LearningNotebook } from "@/components/learning-notebook";
 import { Dashboard } from "@/components/dashboard";
 import { Today } from "@/components/today";
 import { ProgressCalendar } from "@/components/progress-calendar";
@@ -108,7 +110,7 @@ function Tab({ active, onClick, icon: Icon, label, badge = 0 }: TabProps) {
     <button
       aria-current={active ? "page" : undefined}
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${active ? "bg-teal-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+      className={`flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${active ? "bg-teal-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}
     >
       <Icon size={16} />
       <span>{label}</span>
@@ -159,6 +161,7 @@ export default function Cadence({
   onSignOut: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<
+    | "notebook"
     | "dashboard"
     | "today"
     | "practice"
@@ -325,9 +328,7 @@ export default function Cadence({
   const dueCount = upgrades.filter(isDue).length;
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <div
-        className={`mx-auto px-4 py-6 sm:px-6 sm:py-8 ${tab === "dashboard" ? "max-w-6xl" : "max-w-3xl"}`}
-      >
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <header className="mb-6 flex items-center justify-between gap-3">
           <div>
             <h1 className="font-serif text-3xl font-semibold tracking-tight">
@@ -346,53 +347,79 @@ export default function Cadence({
             <span className="hidden sm:inline">My profile</span>
           </button>
         </header>
+        <a
+          href="#learning-content"
+          className="sr-only focus:not-sr-only focus:block focus:py-3"
+        >
+          Skip to learning content
+        </a>
         <nav
           aria-label="Main navigation"
-          className="mb-6 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1.5"
+          className="mb-6 grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[1fr_auto]"
         >
-          <Tab
-            active={tab === "dashboard"}
-            onClick={() => setTab("dashboard")}
-            icon={LayoutDashboard}
-            label="Dashboard"
-          />
-          <Tab
-            active={tab === "today"}
-            onClick={() => setTab("today")}
-            icon={Sun}
-            label="Today"
-          />
-          <Tab
-            active={tab === "practice"}
-            onClick={() => setTab("practice")}
-            icon={BookOpen}
-            label="Practice"
-          />
-          <Tab
-            active={tab === "exercises"}
-            onClick={() => setTab("exercises")}
-            icon={GraduationCap}
-            label="Exercises"
-          />
-          <Tab
-            active={tab === "review"}
-            onClick={() => setTab("review")}
-            icon={Repeat}
-            label="Review"
-            badge={dueCount}
-          />
-          <Tab
-            active={tab === "bank"}
-            onClick={() => setTab("bank")}
-            icon={Layers}
-            label="Bank"
-          />
-          <Tab
-            active={tab === "calendar"}
-            onClick={() => setTab("calendar")}
-            icon={CalendarDays}
-            label="Calendar"
-          />
+          <div className="min-w-0">
+            <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              Learn & practise
+            </p>
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              <Tab
+                active={tab === "dashboard"}
+                onClick={() => setTab("dashboard")}
+                icon={LayoutDashboard}
+                label="Dashboard"
+              />
+              <Tab
+                active={tab === "today"}
+                onClick={() => setTab("today")}
+                icon={Sun}
+                label="Today"
+              />
+              <Tab
+                active={tab === "practice"}
+                onClick={() => setTab("practice")}
+                icon={BookOpen}
+                label="Practice"
+              />
+              <Tab
+                active={tab === "exercises"}
+                onClick={() => setTab("exercises")}
+                icon={GraduationCap}
+                label="Exercises"
+              />
+            </div>
+          </div>
+          <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-3">
+            <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              Remember & reflect
+            </p>
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              <Tab
+                active={tab === "review"}
+                onClick={() => setTab("review")}
+                icon={Repeat}
+                label="Review"
+                badge={dueCount}
+              />
+              <Tab
+                active={tab === "bank"}
+                onClick={() => setTab("bank")}
+                icon={Layers}
+                label="Bank"
+              />
+              <Tab
+                active={tab === "notebook"}
+                onClick={() => setTab("notebook")}
+                icon={NotebookPen}
+                label="Notebook"
+              />
+              <Tab
+                active={tab === "calendar"}
+                onClick={() => setTab("calendar")}
+                icon={CalendarDays}
+                label="Calendar"
+              />
+            </div>
+          </div>
         </nav>
         <AccountStatus
           user={user}
@@ -442,8 +469,16 @@ export default function Cadence({
             <Loader2 className="animate-spin" size={18} /> Loading your studio…
           </div>
         ) : (
-          <main>
+          <main id="learning-content" tabIndex={-1}>
             <fieldset disabled={signingOut}>
+              {tab === "notebook" && (
+                <LearningNotebook
+                  records={learning.records}
+                  bank={upgrades}
+                  onSave={saveSuggestions}
+                  onPractice={() => setTab("today")}
+                />
+              )}
               {tab === "dashboard" && (
                 <Dashboard
                   records={learning.records}
