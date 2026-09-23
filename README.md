@@ -30,52 +30,91 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000 and enter your configured passphrase.
+Open http://localhost:3000 and choose **Continue with Google**. Sign in with the same Google account in each browser to load the same progress.
 
 ```bash
-npm test           # Domain, persistence, and React interaction tests
+npm test           # Domain, account isolation, persistence, and React interaction tests
 npm run typecheck  # TypeScript
 npm run build      # Production build
 ```
 
-Tests use mocked AI and storage responses and never call paid APIs. They cover bounded review queues, multi-level profiles, support adaptation, batch saves, calendar-based progress, interrupted-session recovery, completion deduplication, and error/retry flows. The React interaction tests run in JSDOM; they do not replace a real-browser visual check.
+Tests use mocked identity, AI, and database services. They cover user isolation, unauthorized access, stale-account tabs, conflicting writes, loading in a browser with no local storage, draft recovery, migration, and sign-out saving. Live Google OAuth still requires your own configured Google client.
 
-## Configuration
+## Google sign-in on Vercel
 
-| Variable                   | Purpose                                                  |
-| -------------------------- | -------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`        | Powers lesson generation, hints, and feedback.           |
-| `APP_PASSPHRASE`           | Passphrase for the app's login page.                     |
-| `AUTH_TOKEN`               | A long random string used for the authentication cookie. |
-| `UPSTASH_REDIS_REST_URL`   | Optional Redis endpoint for cross-device sync.           |
-| `UPSTASH_REDIS_REST_TOKEN` | Optional Redis credentials for cross-device sync.        |
+1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials), configure the OAuth consent screen, then create an **OAuth client ID** with application type **Web application**. While the consent screen is in Testing, add your Google account as a test user.
+2. Add this exact **Authorized redirect URI**, replacing the domain with your actual deployment domain:
 
-Generate an authentication token with `openssl rand -hex 32`. Keep credentials in `.env.local` or your hosting environment.
+   ```text
+   https://YOUR-DOMAIN/api/auth/callback/google
+   ```
 
-Without an AI key, the app shows an explicit configuration error and retains the current draft. Without Redis, it works with device storage and displays a sync notice. Device storage is tied to the browser and origin; clearing browser data removes unsynced work. Changes are copied locally immediately and cloud writes are coalesced and ordered. Dirty local copies are retried on return and take precedence over older cloud values. Simultaneous editing on multiple devices is not conflict-merged.
+   For local development, also register `http://localhost:3000/api/auth/callback/google`. Use a stable domain for a preview deployment; every callback domain must be registered with Google. [Google provider setup](https://next-auth.js.org/providers/google)
 
-This is still a **personal deployment** with one shared passphrase, profile, and bank. Serving independent learners requires account authentication and per-user storage namespaces.
+3. In Vercel's project environment variables, configure the values below for Production (and separately for Preview if used). Set `NEXTAUTH_URL` to that environment's public origin, without a trailing path.
+4. Deploy the updated code. Remove the old `APP_PASSPHRASE` and `AUTH_TOKEN` variables: this version no longer uses them.
+
+| Variable                   | Purpose                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`         | Google OAuth Web application client ID.                                                                 |
+| `GOOGLE_CLIENT_SECRET`     | Its client secret.                                                                                      |
+| `NEXTAUTH_URL`             | Public origin, e.g. `https://your-app.vercel.app`. Locally use `http://localhost:3000`.                 |
+| `NEXTAUTH_SECRET`          | A long random authentication secret. Generate with `openssl rand -hex 32`.                              |
+| `UPSTASH_REDIS_REST_URL`   | **Required:** the Upstash Redis REST endpoint.                                                          |
+| `UPSTASH_REDIS_REST_TOKEN` | **Required:** its read/write REST token.                                                                |
+| `ANTHROPIC_API_KEY`        | Powers lessons, hints, and feedback.                                                                    |
+| `LEGACY_OWNER_EMAIL`       | Optional, temporary: permits only this verified Google email to import the old shared database records. |
+
+Use these names exactly, without `NEXT_PUBLIC_`. Keep secrets in `.env.local` or Vercel's environment settings.
+
+Authentication uses NextAuth's Google OAuth provider and encrypted session cookies. Only verified Google identities are accepted. Database ownership derives from Google's stable account ID in the verified session, never from a user ID supplied in a request. The learning data is persisted in Redis; the browser's authentication cookie is not the progress database. The app requests only Google's basic identity scopes (`openid email profile`).
+
+## How account saving works
+
+Profile settings, phrase-bank cards, practice totals, daily drafts, feedback, and completed-session history are saved in Redis under separate keys for each Google account. Progress has no application expiry or TTL. Use a durable Redis database with an appropriate retention/eviction policy and backups for your deployment; deleting or resetting that database removes the saved account records.
+
+On sign-in, the app reads the account's database records. If the database cannot be reached, it shows a retry screen instead of loading an empty workspace that could overwrite existing progress. A different Google account has its own independent progress.
+
+While editing, changes are copied immediately into an **account-scoped device recovery buffer** and sent to the database after a short debounce. The account panel shows **Saving to your account**, **Saved to your account**, or an explicit error. Wait for **Saved to your account** before switching browsers. Failed saves retry on reconnect, window focus, and periodically while the app is open. Signing out first attempts to save; if saving fails, you can explicitly leave the changes on that device and sign out anyway.
+
+Old browser data never automatically replaces a newer database record. Atomic version checks detect concurrent edits. If two browsers change the same category, the app asks whether to use the account version or keep this browser's version. The latter deliberately replaces that category in the account. Different categories save independently. A tab from a previously signed-in account cannot write into the new account after an account switch.
+
+## Bring existing progress into Google sign-in
+
+Import **before saving new progress in the new account**. Imports are atomic and only allowed into an empty account, so an existing account is never silently overwritten.
+
+- **Progress in the old browser:** open the same site origin in the same browser, sign in, and choose **Import my browser progress** in the account panel. The old browser records are retained; a local marker prevents offering the same import again after success.
+- **Progress in the old shared Redis database:** keep the existing Upstash database and temporarily set `LEGACY_OWNER_EMAIL` to the original owner's Google email. Sign in with that email and choose **Import my previous database progress**. Remove `LEGACY_OWNER_EMAIL` after importing. Other Google users cannot access or claim those shared records, and the old records are retained as a migration backup.
+
+If both sources contain progress, choose the one you want before beginning new practice. Importing does not merge two existing accounts. Data from a different browser or origin can only be recovered by returning to the original browser/origin, or from the old Redis database if it had already synced.
 
 ## Code map
 
 ```text
-app/page.tsx                 App navigation, shared state, exercises, review, bank
+app/page.tsx                 Server-side Google session check
+components/cadence.tsx       App navigation, learning state, exercises, review, bank
+components/account-shell.tsx Google sign-out integration
+components/account-status.tsx Account identity, sync status, recovery/import actions
 components/today.tsx         Daily session and progress history
 components/profile.tsx       Learner preferences
 components/practice.tsx      Level-aware practice prompts and timed writing
 components/writing-coach.tsx Shared hint, revision, and feedback flow
 lib/learning.ts              Session planning, adaptation, progress, batch saves
 lib/ai.ts                    AI prompts, response validation, API client
-lib/storage.ts               Device backup and ordered cloud sync
+lib/storage.ts               Account-scoped recovery, versioned database sync
+lib/auth.ts                  Google provider and verified server session
+lib/server-store.ts          Authenticated storage/import handlers
+lib/redis-store.ts           Atomic Redis writes and empty-account import
 lib/sr.ts                    Spaced repetition and local calendar dates
 lib/cefr.ts                  Approximate readability metrics
 lib/types.ts                 Shared domain types
 app/api/ai/route.ts          Authenticated AI proxy
-app/api/store/route.ts       Optional Redis storage
+app/api/store/route.ts       Required account-scoped Redis storage
+app/api/auth/[...nextauth]/route.ts Google OAuth endpoints
 ```
 
-Existing `cadence:upgrades` and `cadence:stats` records are retained. New preferences use `cadence:profile`; daily sessions and history use `cadence:learning`. Device copies use the `cadence:device:` prefix. The model is configured in `lib/ai.ts`.
+Existing shared records are retained for explicit migration. New database keys are `cadence:user:google:<Google account ID>:<category>` for `upgrades`, `stats`, `profile`, and `learning`. Device recovery copies use `cadence:account:<encoded account ID>:cadence:<category>`. The model is configured in `lib/ai.ts`.
 
 ## Deploy
 
-Set the environment variables on Vercel or another compatible Next.js host, install dependencies, and run a production build. Redis is needed for cross-device sync. The existing PWA manifest supports adding the app to a phone's home screen; AI features require a network connection.
+Install dependencies and run a production build. Deploy the updated repository to Vercel with the Google, authentication, Redis, and AI environment variables above. Register the deployed domain's exact OAuth callback with Google. The existing PWA manifest supports adding the app to a phone's home screen; sign-in, account loading, and AI features need a network connection.

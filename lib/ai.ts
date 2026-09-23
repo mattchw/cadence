@@ -1,3 +1,4 @@
+import { accountHeaders } from "@/lib/storage";
 import type {
   Feedback,
   Analysis,
@@ -59,7 +60,7 @@ function textOf(data: AnthropicResponse): string {
 async function callAI(body: AIRequest): Promise<AnthropicResponse> {
   const res = await fetch("/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...accountHeaders() },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(60000),
   });

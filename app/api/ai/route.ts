@@ -1,10 +1,15 @@
+import { currentUser } from "@/lib/auth";
+import { privateJSON, requestProblem } from "@/lib/server-store";
+
 export const runtime = "nodejs";
 
 // The browser posts the same body it used in the sandbox (model, messages,
 // tools, etc). We add the API key here so it never reaches the client.
 export async function POST(req: Request): Promise<Response> {
+  const problem = requestProblem(req, await currentUser(), true);
+  if (problem) return problem;
   if (!process.env.ANTHROPIC_API_KEY) {
-    return Response.json({ error: "AI is not configured" }, { status: 503 });
+    return privateJSON({ error: "AI is not configured" }, 503);
   }
   const body: unknown = await req.json();
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -19,6 +24,9 @@ export async function POST(req: Request): Promise<Response> {
   const text = await res.text();
   return new Response(text, {
     status: res.status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "Cache-Control": "private, no-store",
+    },
   });
 }
