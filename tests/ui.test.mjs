@@ -127,12 +127,13 @@ async function fill(selector, value) {
     await pause();
   });
 }
-async function mount(element) {
+async function mount(element, openToday = true) {
   root = createRoot(document.getElementById("root"));
   await act(async () => {
     root.render(element);
     await pause(10);
   });
+  if (element.type === App && openToday) await click("Today");
 }
 async function unmount() {
   if (root) {
@@ -874,5 +875,75 @@ test("a guided session started on Thursday stays guided when resumed on Friday",
   } finally {
     await unmount();
     mock.timers.setTime(new Date(2026, 8, 23, 12).getTime());
+  }
+});
+
+test("Dashboard opens by default and connects progress actions to the learning screens", async () => {
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  mockServer();
+  try {
+    await mount(app(), false);
+    assert.match(text(), /Your learning dashboard/);
+    assert.match(text(), /Your first improvement starts here/);
+    await click("7 days");
+    assert.equal(button("7 days").getAttribute("aria-pressed"), "true");
+    assert.ok(
+      document.querySelector('[aria-label="Activity over the last 7 days"]'),
+    );
+    await click("Open calendar & session details");
+    assert.match(text(), /Your practice calendar/);
+    await click("Dashboard");
+    await click("Explore my bank");
+    assert.match(text(), /Your bank is empty/);
+    await click("Dashboard");
+    await click("Set up my learning");
+    assert.match(text(), /English that fits your life/);
+  } finally {
+    await unmount();
+  }
+});
+
+test("Dashboard counts unique completed records, filters dates, and shows saved writing evidence", async () => {
+  const { Dashboard } = await import("../components/dashboard.tsx");
+  const record = {
+    id: "one",
+    date: "2026-09-23",
+    title: "An invitation",
+    original: "No thanks.",
+    revision: "Thanks for thinking of me!",
+    feedback,
+    focus: "register",
+    mission: { mode: "independent" },
+  };
+  try {
+    await mount(
+      React.createElement(Dashboard, {
+        records: [
+          record,
+          record,
+          { ...record, id: "old", date: "2026-09-01" },
+          { ...record, id: "future", date: "2026-10-01" },
+        ],
+        session: null,
+        profile: DEFAULT_PROFILE,
+        bank: [],
+        onNavigate: () => {},
+      }),
+    );
+    const sessions = () =>
+      [...document.querySelectorAll("section")]
+        .find(
+          (el) => el.querySelector("h4")?.textContent === "Sessions completed",
+        )
+        .querySelector("p").textContent;
+    assert.equal(sessions(), "2");
+    assert.match(text(), /Thanks for thinking of me!/);
+    await click("7 days");
+    assert.equal(sessions(), "1");
+    assert.match(text(), /1 session/);
+  } finally {
+    await unmount();
   }
 });

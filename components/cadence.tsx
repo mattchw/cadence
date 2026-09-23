@@ -23,6 +23,7 @@ import {
   Sun,
   Settings2,
   CalendarDays,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 import { LEVELS, typeClass } from "@/lib/constants";
@@ -42,6 +43,7 @@ import {
 } from "@/lib/storage";
 import { AccountStatus } from "@/components/account-status";
 import type { AccountUser } from "@/lib/auth-policy";
+import { Dashboard } from "@/components/dashboard";
 import { Today } from "@/components/today";
 import { ProgressCalendar } from "@/components/progress-calendar";
 import { Profile } from "@/components/profile";
@@ -157,6 +159,7 @@ export default function Cadence({
   onSignOut: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<
+    | "dashboard"
     | "today"
     | "practice"
     | "exercises"
@@ -164,7 +167,7 @@ export default function Cadence({
     | "bank"
     | "profile"
     | "calendar"
-  >("today");
+  >("dashboard");
   const [upgrades, setUpgrades] = useState<BankItem[]>([]);
   const bankRef = useRef<BankItem[]>([]);
   const [stats, setStats] = useState<Stats>({
@@ -322,7 +325,9 @@ export default function Cadence({
   const dueCount = upgrades.filter(isDue).length;
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-5 sm:py-8">
+      <div
+        className={`mx-auto px-4 py-6 sm:px-6 sm:py-8 ${tab === "dashboard" ? "max-w-6xl" : "max-w-3xl"}`}
+      >
         <header className="mb-6 flex items-center justify-between gap-3">
           <div>
             <h1 className="font-serif text-3xl font-semibold tracking-tight">
@@ -345,6 +350,12 @@ export default function Cadence({
           aria-label="Main navigation"
           className="mb-6 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1.5"
         >
+          <Tab
+            active={tab === "dashboard"}
+            onClick={() => setTab("dashboard")}
+            icon={LayoutDashboard}
+            label="Dashboard"
+          />
           <Tab
             active={tab === "today"}
             onClick={() => setTab("today")}
@@ -433,6 +444,15 @@ export default function Cadence({
         ) : (
           <main>
             <fieldset disabled={signingOut}>
+              {tab === "dashboard" && (
+                <Dashboard
+                  records={learning.records}
+                  session={learning.session}
+                  profile={profile}
+                  bank={upgrades}
+                  onNavigate={setTab}
+                />
+              )}
               {tab === "calendar" && (
                 <ProgressCalendar
                   records={learning.records}
