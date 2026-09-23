@@ -19,6 +19,8 @@ import {
 } from "@/lib/learning";
 import { FeedbackView, WritingCoach } from "@/components/writing-coach";
 import { selectRecall } from "@/lib/daily-loop";
+import { completedChapters, weeklyMission } from "@/lib/missions";
+import { MissionBoard } from "@/components/weekly-mission";
 import {
   RecallPanel,
   ReusePrompt,
@@ -84,7 +86,13 @@ export function Today({
       ? session
       : null;
   const days = weeklyDays(records);
-  const nextRecall = !active ? selectRecall(records, today) : null;
+  const plannedMission = weeklyMission(profile, records, today);
+  const independent = active
+    ? active.mission?.mode === "independent"
+    : plannedMission.mode === "independent" &&
+      !completedChapters(records, plannedMission.weekStart).has(4);
+  const nextRecall =
+    !active && !independent ? selectRecall(records, today) : null;
   const generate = async (current: DailySession) => {
     setBusy(true);
     setError("");
@@ -103,7 +111,15 @@ export function Today({
     }
   };
   const start = () => {
-    const next = createSession(profile, minutes, bank, records, support);
+    const next = createSession(
+      profile,
+      minutes,
+      bank,
+      records,
+      support,
+      today,
+      true,
+    );
     onStart(next);
     void generate(next);
   };
@@ -177,6 +193,12 @@ export function Today({
       </section>
 
       <ProgressPulse records={records} />
+      {(!active || active.mission) && (
+        <MissionBoard
+          mission={active?.mission ?? plannedMission}
+          records={records}
+        />
+      )}
 
       {!profile.configured && !active && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-4">
@@ -227,31 +249,39 @@ export function Today({
               </button>
             ))}
           </div>
-          <label className="block text-sm font-medium">
-            Today’s challenge
-            <select
-              className="text-input mt-2"
-              value={support}
-              onChange={(e) => setSupport(e.target.value as Support)}
-            >
-              <option value="supported">
-                More support · a gentler session
-              </option>
-              <option value="balanced">Balanced · a comfortable stretch</option>
-              <option value="stretch">
-                Stretch me · a little more challenge
-              </option>
-            </select>
-          </label>
+          {!independent && (
+            <label className="block text-sm font-medium">
+              Today’s challenge
+              <select
+                className="text-input mt-2"
+                value={support}
+                onChange={(e) => setSupport(e.target.value as Support)}
+              >
+                <option value="supported">
+                  More support · a gentler session
+                </option>
+                <option value="balanced">
+                  Balanced · a comfortable stretch
+                </option>
+                <option value="stretch">
+                  Stretch me · a little more challenge
+                </option>
+              </select>
+            </label>
+          )}
           <p className="text-xs leading-relaxed text-slate-500">
-            {suggestedSupport(records, profile) === "balanced"
-              ? "Your reflections will help us tune future sessions. Your level stays in your control."
-              : "Suggested from your last three reflections at these reading and writing levels. You can change it above."}{" "}
+            {independent
+              ? "This chapter starts with a fresh situation. No warm-up answers, saved phrase prompts, or hints before submission. Choose the time you have; the task still fits your level."
+              : suggestedSupport(records, profile) === "balanced"
+                ? "Your reflections will help us tune future sessions. Your level stays in your control."
+                : "Suggested from your last three reflections at these reading and writing levels. You can change it above."}{" "}
             Time estimates are flexible.
           </p>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">
-              Recall → a new challenge → reuse → notice a change
+              {independent
+                ? "A new situation → your first response → feedback"
+                : "Recall → a new challenge → reuse → notice a change"}
             </p>
             <button className="primary-button" onClick={start} disabled={busy}>
               Start my session <ArrowRight size={16} />
@@ -492,27 +522,38 @@ export function Today({
                   {active.lesson.passage}
                 </p>
               </details>
-              <ul className="space-y-2">
-                {active.lesson.successCriteria.map((criterion, index) => (
-                  <li key={index} className="flex gap-2 text-sm text-slate-600">
-                    <Check
-                      size={15}
-                      className="mt-0.5 shrink-0 text-teal-700"
-                    />
-                    {criterion}
-                  </li>
-                ))}
-              </ul>
-              <details
-                className="text-sm text-slate-600"
-                open={active.support === "supported" ? true : undefined}
-              >
-                <summary className="cursor-pointer text-teal-700">
-                  Need a starting point?
-                </summary>
-                <p className="mt-2 leading-relaxed">{active.lesson.support}</p>
-              </details>
-              <ReusePrompt targets={active.reuseTargets ?? []} />
+              {!independent && (
+                <ul className="space-y-2">
+                  {active.lesson.successCriteria.map((criterion, index) => (
+                    <li
+                      key={index}
+                      className="flex gap-2 text-sm text-slate-600"
+                    >
+                      <Check
+                        size={15}
+                        className="mt-0.5 shrink-0 text-teal-700"
+                      />
+                      {criterion}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!independent && (
+                <details
+                  className="text-sm text-slate-600"
+                  open={active.support === "supported" ? true : undefined}
+                >
+                  <summary className="cursor-pointer text-teal-700">
+                    Need a starting point?
+                  </summary>
+                  <p className="mt-2 leading-relaxed">
+                    {active.lesson.support}
+                  </p>
+                </details>
+              )}
+              {!independent && (
+                <ReusePrompt targets={active.reuseTargets ?? []} />
+              )}
               <WritingCoach
                 key={active.id}
                 task={active.lesson.prompt}
@@ -524,6 +565,7 @@ export function Today({
                 bank={bank}
                 onSave={(items) => onSave(items, active.focus)}
                 reuseTargets={active.reuseTargets}
+                independent={independent}
               />
               {active.writing.feedback && (
                 <div className="border-t border-slate-100 pt-5">
@@ -640,6 +682,8 @@ export function Today({
                   <span className="mt-1 block text-xs text-slate-500">
                     {record.date} · {record.minutes} minute session ·{" "}
                     {FOCUS_LABELS[record.focus]}
+                    {record.mission &&
+                      ` · ${record.mission.chapterTitle}${record.mission.mode === "independent" ? " · No-hints attempt" : ""}`}
                   </span>
                 </summary>
                 <div className="mt-5 space-y-5">

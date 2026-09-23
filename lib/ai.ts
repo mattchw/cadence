@@ -144,10 +144,12 @@ export async function getFeedback(
   profile = DEFAULT_PROFILE,
   original?: string,
   reuseTargets: ReuseTarget[] = [],
+  independent = false,
 ): Promise<Feedback> {
   const result = await ask(
     `${COACH_RULES}
 Give short, evidence-based feedback on the submitted response using the learner's writing level and goal. ${isDecode ? "This is a comprehension task: check the interpretation against the original text." : ""}
+${independent ? "This is a first attempt submitted in the app's no-hints mode. Explain one specific skill demonstrated and one next step, based on exact details in the response. Do not infer overall mastery, CEFR advancement, or improvement over the week from a single attempt." : ""}
 Schema: {"rewrite":"one possible version preserving meaning and voice", "verdict":"one clear, supportive sentence", "qualities":{"clarity":"brief specific observation","accuracy":"brief specific observation","precision":"brief specific observation","appropriateness":"brief observation about audience and task"}, "upgrades":[{"original":"exact phrase from submitted response","native":"suggested phrasing","why":"reason","type":"collocation|register|idiom|word-choice|grammar|rhythm|vocab","category":"correction|alternative"}], "next_step":"one habit to practise", "improvement":"if an original was provided, explain what changed in the revision; otherwise empty string"}
 Give 0–3 useful suggestions. Do not invent errors to fill a quota. Make no numerical proficiency claims. If an original is supplied, assess the revision and compare it fairly to the original; unchanged text is not an improvement.
 Also return "practiceCorrection": null, or ONE correction that the learner fixed between original and response: {"original":"exact short quote from original", "native":"exact corrected quote from response", "why":"explain the correction", "type":"collocation|register|idiom|word-choice|grammar|rhythm|vocab", "category":"correction"}. Use null if there was no original, no genuine error fixed, or only a stylistic alternative. This will become a future recall exercise; do not invent a mistake or quote your own rewrite.
@@ -159,6 +161,7 @@ When reuseTargets are supplied, also return "expressionChecks": [{"id":"exact ta
       response: draft,
       original,
       reuseTargets,
+      assessmentMode: independent ? "no-hints" : "guided",
     }),
   );
   if (
@@ -231,6 +234,7 @@ When reuseTargets are supplied, also return "expressionChecks": [{"id":"exact ta
 export async function generateDailyLesson(
   session: DailySession,
 ): Promise<DailyLesson> {
+  const independent = session.mission?.mode === "independent";
   const size =
     session.minutes === 3
       ? "35–60 words of input; a 1–2 sentence response"
@@ -239,35 +243,39 @@ export async function generateDailyLesson(
         : "180–240 words of input; a 100–150 word response";
   const result = await ask(
     `${COACH_RULES}
-Create one engaging daily READING AND WRITING challenge, with a clear finish. Use an original fictional situation about the learner's interest, not purported news or facts needing verification. At A1/A2 use familiar concrete language, short sentences and a sentence starter. At B1/B2 ask for explanation, comparison or a practical response. At C1/C2 use subtext, a tone switch, nuanced word choice or synthesis of two short viewpoints, suited to the focus. Use the READING level for input and WRITING level for output. The target is a direction, not permission to skip several levels. Fit the time budget, reducing length further for beginners. Use variety across dates.
+Create one engaging daily READING AND WRITING challenge, with a clear finish. Use an original fictional situation about the learner's interest, not purported news or facts needing verification. At A1/A2 use familiar concrete language and short sentences; include a sentence starter only for guided practice. At B1/B2 ask for explanation, comparison or a practical response. At C1/C2 use subtext, a tone switch, nuanced word choice or synthesis of two short viewpoints, suited to the focus. Use the READING level for input and WRITING level for output. The target is a direction, not permission to skip several levels. Fit the time budget, reducing length further for beginners. Use variety across dates.
 Support setting: supported = more explanation and a starter; balanced = a small stretch; stretch = less scaffolding and more subtle distinctions within their level. Never use difficulty as an excuse for verbose prose. The support field is an optional hint, not an answer.
 If personalFocus is supplied, give an opportunity to practise that specific correction in a DIFFERENT situation. Do not repeat the old sentence or expose the answer. If reuseTargets are supplied, design a context where those expressions fit naturally; leave their use to the learner, not a model answer in the passage. They are optional tools, never force awkward phrasing. At C1/C2 rotate between diplomatic disagreement, concise rewriting that preserves nuance, audience switches, and fair summary followed by a measured challenge.
-Schema: {"title":"short evocative title", "passage":"original input/dialogue/viewpoints", "prompt":"one clear task with audience, purpose and response length", "support":"one helpful starter or strategy", "successCriteria":["concrete success criterion", "concrete success criterion"]}`,
+If mission is supplied, this is one chapter of a continuing fictional story. Keep its people and setting consistent. The learner's previous responses are story decisions: have the other person respond to what was actually proposed or conceded. Do not invent choices in missed chapters; briefly introduce the situation when joining midweek. Each chapter must still stand alone. Adapt complexity to the actual reading/writing levels, including simple everyday requests at A1/A2.
+${independent ? "NO-HINTS TRANSFER CHALLENGE: introduce an unfamiliar objection, new constraint, or new audience. Test the communication skills from previous chapters without copying their tasks or responses. Do not quote earlier learner responses, teach the target phrases, offer model sentences, or give clues in the passage/prompt. The passage supplies only situational facts and the other person's message. Return support as an empty string and successCriteria as an empty array. Keep it achievable at the current level; no hints does not mean artificially harder." : ""}
+Schema: {"title":"short evocative title", "passage":"original input/dialogue/viewpoints", "prompt":"one clear task with audience, purpose and response length", "support":${independent ? '""' : '"one helpful starter or strategy"'}, "successCriteria":${independent ? "[]" : '["concrete success criterion", "concrete success criterion"]'}}`,
     JSON.stringify({
       learner: learnerContext(session.profile),
       date: session.date,
       topic: session.topic,
       focus: FOCUS_LABELS[session.focus],
-      support: session.support,
+      support: independent ? "none" : session.support,
       budget: size,
-      personalFocus: session.recall
-        ? {
-            original: session.recall.original,
-            correction: session.recall.suggestion,
-            reason: session.recall.reason,
-            previousTask: session.recall.context,
-          }
-        : undefined,
-      reuseTargets: session.reuseTargets ?? [],
+      personalFocus:
+        !independent && session.recall
+          ? {
+              original: session.recall.original,
+              correction: session.recall.suggestion,
+              reason: session.recall.reason,
+              previousTask: session.recall.context,
+            }
+          : undefined,
+      reuseTargets: independent ? [] : (session.reuseTargets ?? []),
+      mission: session.mission,
     }),
   );
   if (
-    ![result.title, result.passage, result.prompt, result.support].every(
-      string,
-    ) ||
-    !Array.isArray(result.successCriteria) ||
-    !result.successCriteria.length ||
-    !result.successCriteria.every(string)
+    ![result.title, result.passage, result.prompt].every(string) ||
+    (!independent &&
+      (!string(result.support) ||
+        !Array.isArray(result.successCriteria) ||
+        !result.successCriteria.length ||
+        !result.successCriteria.every(string)))
   ) {
     throw new Error("The challenge was incomplete. Please try again.");
   }
@@ -275,8 +283,10 @@ Schema: {"title":"short evocative title", "passage":"original input/dialogue/vie
     title: result.title as string,
     passage: result.passage as string,
     prompt: result.prompt as string,
-    support: result.support as string,
-    successCriteria: result.successCriteria.slice(0, 3) as string[],
+    support: independent ? "" : (result.support as string),
+    successCriteria: independent
+      ? []
+      : (result.successCriteria as string[]).slice(0, 3),
   };
 }
 

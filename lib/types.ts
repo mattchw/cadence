@@ -102,6 +102,24 @@ export interface DailyLesson {
   successCriteria: string[];
 }
 
+export interface WeeklyMission {
+  weekStart: string;
+  title: string;
+  setting: string;
+  episode: number;
+  chapterTitle: string;
+  objective: string;
+  mode: "guided" | "independent";
+  previous: {
+    episode: number;
+    title: string;
+    response: string;
+    prompt: string;
+    passage?: string;
+    focus: UpgradeType;
+  }[];
+}
+
 export interface RecallChallenge {
   key: string;
   sourceId: string;
@@ -133,6 +151,7 @@ export interface ExpressionCheck {
 }
 
 export interface DailySession {
+  mission?: WeeklyMission;
   id: string;
   date: string;
   profile: LearnerProfile;
@@ -155,6 +174,8 @@ export interface DailySession {
 }
 
 export interface LearningRecord {
+  passage?: string;
+  mission?: WeeklyMission;
   recall?: RecallChallenge | null;
   reuseTargets?: ReuseTarget[];
   id: string;

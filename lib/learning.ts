@@ -10,6 +10,7 @@ import type {
   WritingState,
 } from "./types";
 import { selectRecall, selectReuseTargets } from "./daily-loop";
+import { completedChapters, weeklyMission } from "./missions";
 
 export const DEFAULT_PROFILE: LearnerProfile = {
   levels: { reading: "C1", writing: "C1", listening: "C1", speaking: "C1" },
@@ -142,19 +143,33 @@ export function createSession(
   records: LearningRecord[],
   support: Support,
   date = localDate(),
+  withMission = false,
 ): DailySession {
-  const recall = selectRecall(records, date);
+  const planned = withMission
+    ? weeklyMission(profile, records, date)
+    : undefined;
+  const mission =
+    planned?.mode === "independent" &&
+    completedChapters(
+      records.filter((record) => record.date <= date),
+      planned.weekStart,
+    ).has(4)
+      ? undefined
+      : planned;
+  const independent = mission?.mode === "independent";
+  const recall = independent ? null : selectRecall(records, date);
   const focus = recall?.focus ?? chooseFocus(records, date);
   const reviewLimit =
     (minutes === 3 ? 1 : minutes === 10 ? 3 : 5) - (recall ? 1 : 0);
   const reviewIds = upgrades
     .filter((item) => item.due <= date)
     .sort((a, b) => a.due.localeCompare(b.due))
-    .slice(0, reviewLimit)
+    .slice(0, independent ? 0 : reviewLimit)
     .map((item) => item.id);
   const daySeed = Number(date.replaceAll("-", ""));
   return {
     id: makeId(),
+    mission,
     date,
     profile: structuredClone(profile),
     minutes,
@@ -163,13 +178,17 @@ export function createSession(
     support,
     stage: recall ? "recall" : reviewIds.length ? "review" : "read",
     recall,
-    reuseTargets: selectReuseTargets(
-      upgrades,
-      records,
-      date,
-      minutes === 3 || ["A1", "A2"].includes(profile.levels.writing) ? 1 : 2,
-      focus,
-    ),
+    reuseTargets: independent
+      ? []
+      : selectReuseTargets(
+          upgrades,
+          records,
+          date,
+          minutes === 3 || ["A1", "A2"].includes(profile.levels.writing)
+            ? 1
+            : 2,
+          focus,
+        ),
     lesson: null,
     reviewIds,
     reviewedIds: [],
@@ -184,8 +203,17 @@ export function createSession(
 export function toRecord(session: DailySession): LearningRecord | null {
   if (!session.lesson || !session.writing.feedback || !session.difficulty)
     return null;
+  if (
+    session.mission?.mode === "independent" &&
+    (session.writing.hint || !session.writing.draft.trim())
+  )
+    return null;
   return {
     id: session.id,
+    mission: session.mission
+      ? { ...structuredClone(session.mission), previous: [] }
+      : undefined,
+    passage: session.mission ? session.lesson.passage : undefined,
     date: session.date,
     title: session.lesson.title,
     prompt: session.lesson.prompt,

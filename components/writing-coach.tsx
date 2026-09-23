@@ -160,6 +160,7 @@ interface Props {
   onSave: (items: UpgradeSuggestion[]) => void;
   onFeedback?: () => void;
   locked?: boolean;
+  independent?: boolean;
   reuseTargets?: ReuseTarget[];
 }
 export function WritingCoach({
@@ -173,8 +174,10 @@ export function WritingCoach({
   onSave,
   onFeedback,
   locked = false,
+  independent = false,
   reuseTargets = [],
 }: Props) {
+  const hintValue = independent ? null : value.hint;
   const [busy, setBusy] = useState<"hint" | "feedback" | null>(null);
   const [error, setError] = useState("");
   const mounted = useRef(true);
@@ -188,6 +191,7 @@ export function WritingCoach({
     ? `${task}\n\nReading material:\n${context}`
     : task;
   const hint = async () => {
+    if (independent || locked) return;
     setBusy("hint");
     setError("");
     try {
@@ -214,20 +218,27 @@ export function WritingCoach({
     }
   };
   const feedback = async () => {
+    if (locked) return;
     setBusy("feedback");
     setError("");
     try {
       const result = await getFeedback(
         focus,
         taskContext,
-        value.hint ? value.revision : value.draft,
+        hintValue ? value.revision : value.draft,
         focus === "listening",
         profile,
-        value.hint ? value.draft : undefined,
-        reuseTargets,
+        hintValue ? value.draft : undefined,
+        independent ? [] : reuseTargets,
+        independent,
       );
       if (mounted.current) {
-        onChange({ ...value, feedback: result });
+        onChange({
+          ...value,
+          hint: hintValue,
+          revision: independent ? "" : value.revision,
+          feedback: result,
+        });
         onFeedback?.();
       }
     } catch (e) {
@@ -241,7 +252,14 @@ export function WritingCoach({
   };
   return (
     <div className="space-y-5">
-      {!value.hint && !value.feedback && (
+      {independent && (
+        <p className="rounded-xl bg-indigo-50 p-4 text-sm leading-relaxed text-indigo-950">
+          No-hints challenge: write your first response on your own. Feedback
+          and a possible rewrite appear only after you submit. This is practice,
+          not a proficiency exam.
+        </p>
+      )}
+      {!hintValue && !value.feedback && (
         <>
           <label
             className="block text-sm font-semibold text-slate-800"
@@ -265,49 +283,53 @@ export function WritingCoach({
             </span>
             <button
               className="primary-button"
-              disabled={!!busy || !value.draft.trim()}
-              onClick={hint}
+              disabled={locked || !!busy || !value.draft.trim()}
+              onClick={independent ? feedback : hint}
             >
-              {busy === "hint" ? (
+              {busy ? (
                 <Loader2 className="animate-spin" size={16} />
+              ) : independent ? (
+                <ArrowRight size={16} />
               ) : (
                 <Lightbulb size={16} />
               )}{" "}
-              Help me improve it
+              {independent ? "Submit without hints" : "Help me improve it"}
             </button>
           </div>
-          <button
-            className="text-sm text-slate-500 underline underline-offset-4 disabled:opacity-40"
-            disabled={!!busy || !value.draft.trim()}
-            onClick={feedback}
-          >
-            Get feedback directly
-          </button>
+          {!independent && (
+            <button
+              className="text-sm text-slate-500 underline underline-offset-4 disabled:opacity-40"
+              disabled={locked || !!busy || !value.draft.trim()}
+              onClick={feedback}
+            >
+              Get feedback directly
+            </button>
+          )}
         </>
       )}
-      {value.hint && !value.feedback && (
+      {hintValue && !value.feedback && (
         <>
           <div className="rounded-xl bg-teal-50 p-4">
             <p className="text-xs font-semibold text-teal-800">
               What already works
             </p>
             <p className="mt-1 text-sm leading-relaxed text-teal-900">
-              {value.hint.strength}
+              {hintValue.strength}
             </p>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <p className="text-xs font-semibold text-amber-900">
-              {value.hint.category === "correction"
+              {hintValue.category === "correction"
                 ? "One thing to adjust"
                 : "An optional experiment"}
             </p>
-            {value.hint.excerpt && (
+            {hintValue.excerpt && (
               <blockquote className="mt-2 border-l-2 border-amber-300 pl-3 text-sm text-amber-900">
-                “{value.hint.excerpt}”
+                “{hintValue.excerpt}”
               </blockquote>
             )}
             <p className="mt-3 text-sm leading-relaxed text-amber-900">
-              {value.hint.hint}
+              {hintValue.hint}
             </p>
           </div>
           <details className="text-sm text-slate-600">
@@ -356,7 +378,7 @@ export function WritingCoach({
           {error}
         </p>
       )}
-      {busy === "feedback" && !value.hint && (
+      {busy === "feedback" && !hintValue && (
         <p
           className="flex items-center gap-2 text-sm text-slate-500"
           role="status"
@@ -368,7 +390,7 @@ export function WritingCoach({
         <>
           <details className="text-sm text-slate-600">
             <summary className="cursor-pointer">
-              Your {value.hint ? "two attempts" : "response"}
+              Your {hintValue ? "two attempts" : "response"}
             </summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
@@ -377,7 +399,7 @@ export function WritingCoach({
                   {value.draft}
                 </p>
               </div>
-              {value.hint && (
+              {hintValue && (
                 <div>
                   <p className="mb-1 text-xs font-semibold">Revision</p>
                   <p className="whitespace-pre-wrap rounded-lg bg-teal-50 p-3">

@@ -1,4 +1,7 @@
-import test from "node:test";
+import test, { mock } from "node:test";
+
+// Keep weekday-dependent daily missions deterministic. Timers still run normally.
+mock.timers.enable({ apis: ["Date"], now: new Date(2026, 8, 23, 12) });
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 
@@ -738,5 +741,138 @@ test("initial setup failures explain the missing database and the account retry 
     assert.ok(document.querySelector("select"));
   } finally {
     await unmount();
+  }
+});
+
+test("Friday mission hides hints, survives reload and failed feedback, and saves a no-hints result to history and calendar", async () => {
+  mock.timers.setTime(new Date(2026, 8, 25, 12).getTime());
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  const { weeklyMission } = await import("../lib/missions.ts");
+  const first = {
+    id: "monday",
+    date: "2026-09-21",
+    title: "A small pilot",
+    prompt: "Propose a trial to Sam",
+    original: "Could we try a small pilot first?",
+    revision: "",
+    feedback: {},
+    minutes: 3,
+    reviewed: 0,
+    focus: "register",
+    difficulty: "right",
+    readingLevel: "C1",
+    writingLevel: "C1",
+    mission: weeklyMission(DEFAULT_PROFILE, [], "2026-09-21"),
+  };
+  const server = mockServer({
+    "cadence:profile": { ...DEFAULT_PROFILE, configured: true, minutes: 3 },
+    "cadence:learning": { session: null, records: [first] },
+  });
+  const baseFetch = globalThis.fetch;
+  let failFeedback = true;
+  let submitted;
+  let hintRequests = 0;
+  globalThis.fetch = async (url, options) => {
+    if (url === "/api/ai") {
+      const request = JSON.parse(options.body);
+      if (request.system.includes("ONE actionable hint")) hintRequests++;
+      if (request.system.includes("Give short, evidence-based")) {
+        submitted = JSON.parse(request.messages[0].content);
+        if (failFeedback)
+          return Response.json({ error: "busy" }, { status: 429 });
+      }
+    }
+    return baseFetch(url, options);
+  };
+  try {
+    await mount(app());
+    assert.match(text(), /Weekly story/);
+    assert.match(text(), /1 \/ 5 chapters completed/);
+    await click("Start my session");
+    await click("I’m ready to try");
+    assert.ok(
+      ![...document.querySelectorAll("button")].some((element) =>
+        element.textContent.includes("Help me improve it"),
+      ),
+    );
+    assert.ok(!text().includes("Need a starting point?"));
+    assert.ok(!text().includes("Put your saved expressions to work"));
+    assert.ok(!text().includes(lesson.support));
+    assert.equal(button("Submit without hints").disabled, true);
+    await fill(
+      "#writing-draft",
+      "We could run a smaller pilot within the new deadline.",
+    );
+    await unmount();
+    clearStorageSession();
+    localStorage.clear();
+    await mount(app());
+    assert.equal(
+      document.querySelector("#writing-draft").value,
+      "We could run a smaller pilot within the new deadline.",
+    );
+    await click("Submit without hints");
+    assert.match(text(), /coach is busy/);
+    assert.equal(
+      document.querySelector("#writing-draft").value,
+      "We could run a smaller pilot within the new deadline.",
+    );
+    failFeedback = false;
+    await click("Submit without hints");
+    assert.equal(submitted.assessmentMode, "no-hints");
+    assert.equal(submitted.original, undefined);
+    assert.deepEqual(submitted.reuseTargets, []);
+    assert.equal(hintRequests, 0);
+    await click("Wrap up my session");
+    await click("About right");
+    await click("Finish for today");
+    assert.match(text(), /Final challenge complete/);
+    assert.ok(!text().includes("Mission complete."));
+    const saved = server.remote.get("cadence:learning").records.at(-1);
+    assert.equal(saved.mission.mode, "independent");
+    assert.equal(saved.revision, "");
+    assert.equal(saved.original, submitted.response);
+    await click("Calendar");
+    assert.match(text(), /No-hints attempt/);
+    await unmount();
+    clearStorageSession();
+    localStorage.clear();
+    await mount(app());
+    assert.match(text(), /Final challenge complete/);
+    assert.match(text(), /2 \/ 5 chapters completed/);
+  } finally {
+    await unmount();
+    mock.timers.setTime(new Date(2026, 8, 23, 12).getTime());
+  }
+});
+
+test("a guided session started on Thursday stays guided when resumed on Friday", async () => {
+  mock.timers.setTime(new Date(2026, 8, 25, 12).getTime());
+  localStorage.clear();
+  clearStorageSession();
+  configureStorage(user.id);
+  const { createSession } = await import("../lib/learning.ts");
+  const session = createSession(
+    DEFAULT_PROFILE,
+    3,
+    [],
+    [],
+    "balanced",
+    "2026-09-24",
+    true,
+  );
+  session.stage = "write";
+  session.lesson = lesson;
+  mockServer({ "cadence:learning": { session, records: [] } });
+  try {
+    await mount(app());
+    assert.match(text(), /Your session from 2026-09-24/);
+    assert.ok(button("Help me improve it"));
+    assert.ok(!text().includes("Submit without hints"));
+  } finally {
+    await unmount();
+    mock.timers.setTime(new Date(2026, 8, 23, 12).getTime());
   }
 });

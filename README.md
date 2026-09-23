@@ -12,6 +12,14 @@ Daily English practice that fits your level and your life. Built with Next.js 15
 - **Adaptation:** three consecutive easy or hard reflections at the same reading and writing levels adjust the suggested support. Repeated corrections across recent sessions influence the next focus. Learners can override the support setting; the app never automatically awards a CEFR level.
 - **Resume:** the active daily session, review position, draft, hint, revision, and feedback are saved. An unfinished session can be completed on a later day and counts towards that day's weekly goal.
 
+## Weekly story missions
+
+New Today sessions join a weekly fictional story shaped by the learner's everyday, work, or study goal. Monday introduces a proposal, Tuesday an objection, Wednesday an implied concern, and Thursday a compromise. A mission panel previews the next chapter and marks only chapters actually completed. Later lessons receive the earlier tasks, scenes, and the learner's responses, so the coach can continue the conversation from those choices.
+
+From Friday through Sunday, the next new mission session is a **no-hints transfer challenge**: an unfamiliar objection, audience, or constraint at the learner's current level. It skips recall warm-ups and saved-expression prompts, hides starting points and coaching hints, and offers feedback only after submission. The original attempt is saved and labelled in both history and the calendar. This is an app practice mode, not a proctored exam or a CEFR certification. AI feedback does not establish mastery from one answer.
+
+Join midweek without catching up. Missed chapters remain incomplete. A completed Friday challenge does not repeat automatically over the weekend; further sessions use ordinary daily practice. Unfinished sessions preserve their original mission and mode across dates and weeks. Older sessions remain compatible and finish normally; mission participation begins with the next new session. New weeks start a fresh story, with past results retained in history. All mission progress uses the existing account database; no additional environment variables are needed.
+
 ## A daily loop built from your own English
 
 New Today sessions connect earlier practice to a fresh task:

@@ -216,6 +216,14 @@ export function ProgressCalendar({
               className="rounded-xl border border-slate-200 p-4"
             >
               <h4 className="font-semibold text-slate-900">{record.title}</h4>
+              {record.mission && (
+                <p className="mt-1 text-xs font-medium text-indigo-700">
+                  {record.mission.title} · {record.mission.chapterTitle}
+                  {record.mission.mode === "independent"
+                    ? " · No-hints attempt"
+                    : ""}
+                </p>
+              )}
               <p className="mt-1 text-xs text-slate-500">
                 {FOCUS_LABELS[record.focus]} · {record.reviewed} cards reviewed
                 · Writing {record.writingLevel}
